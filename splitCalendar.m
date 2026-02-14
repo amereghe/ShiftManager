@@ -4,9 +4,11 @@ clear all;
 close all;
 
 %% user options
-employeeName="tutti"; % cognome persona, o "ricerca"/"research", o "operatori", o "tutti"/"all" 
-masterExcelShifts="P:\Turni Macchina\Turni 2025-2026_Ver3.4.xlsx";
+employeeName="all"; % cognome persona, o "ricerca"/"research", o "operatori", o "tutti"/"all" 
+masterExcelShifts="P:\Turni Macchina\Turni_Gennaio-Giugno2026_ver1.xlsx";
 omFileName=ExtractFileName(masterExcelShifts);
+% tMin=datetime(now,'ConvertFrom','datenum'); % tMin=datetime('18/10/2025 13:05:00','InputFormat','dd/MM/uuuu HH:mm:ss');
+tMax=datetime('26/06/2026 23:59:59','InputFormat','dd/MM/uuuu HH:mm:ss');
 
 %% parsing original excel
 masterShifts=ParseMasterFile(masterExcelShifts);
@@ -18,9 +20,10 @@ if (isstring(employeeName))
     if (strcmpi(employeeName,"all") | strcmpi(employeeName,"tutti") )
         employeeNames=GetUniqueNames(masterShifts);
     elseif (contains(lower(employeeName),"ricerca") | contains(lower(employeeName),"research"))
-        employeeNames=["Butella","Donetti","Mereghetti","Pullia","Ricerca","Savazzi"];
+        employeeNames=["Butella","Donetti","Felcini","Mereghetti","Pullia","Ricerca","Savazzi","Nodari"];
+        employeeNickNames=["GB","MD","EF","AM","MGP",missing(),"SS","MN"];
     elseif (contains(lower(employeeName),"operatori") | contains(lower(employeeName),"operators"))
-        employeeNames=["Abbiati","Basso","Beretta","Bozza","Chiesa","Liceti","Malinverni","Manzini","Scotti","Spairani"];
+        employeeNames=["Abbiati","Basso","Beretta","Bozza","Cappello","Chiesa","Liceti","Malinverni","Manzini","Scotti","Spairani"];
     else
         employeeNames=[employeeName];
     end
@@ -29,24 +32,21 @@ else
 end
 
 %% process
+% - time window
+if (~exist("tMin","var")), tMin=missing(); end
+if (ismissing(tMin)), tMin=min(masterShifts.Turni); end
+if (~exist("tMax","var")), tMax=missing(); end
+if (ismissing(tMax)), tMax=max(masterShifts.Turni); end
+crunchShifts=masterShifts(isbetween(masterShifts.Turni,tMin,tMax),:);
+% - main loop
 rEmployeeShifts=NaN();
 for ii=1:length(employeeNames)
     % - build table of employee
-    employeeShifts=BuildEmployeeTable(masterShifts,employeeNames(ii));
+    employeeShifts=BuildEmployeeTable(crunchShifts,employeeNames(ii));
     % - write csv file
     if (contains(lower(employeeName),"ricerca"))
-        switch employeeNames(ii)
-            case "Butella"
-                employeeShifts.subjects(:)=compose("GB: %s",employeeShifts.subjects(:));
-            case "Donetti"
-                employeeShifts.subjects(:)=compose("MD: %s",employeeShifts.subjects(:));
-            case "Mereghetti"
-                employeeShifts.subjects(:)=compose("AM: %s",employeeShifts.subjects(:));
-            case "Pullia"
-                employeeShifts.subjects(:)=compose("MGP: %s",employeeShifts.subjects(:));
-            case "Savazzi"
-                employeeShifts.subjects(:)=compose("SS: %s",employeeShifts.subjects(:));
-        end
+        NickName=employeeNickNames(ii);
+        if (~ismissing(NickName)), employeeShifts.subjects(:)=strcat(NickName,": ",employeeShifts.subjects(:));  end
         if (ii==1)
             rEmployeeShifts=employeeShifts;
         else
@@ -173,7 +173,7 @@ function employeeShifts=BuildEmployeeTable(masterShifts,employeeName)
         end
     end
     employeeShifts.descriptions(contains(employeeShifts.descriptions,"nessuno","IgnoreCase",true))="Sei in turno da solo";
-    employeeShifts.descriptions(contains(employeeShifts.descriptions,"ricerca","IgnoreCase",true))="Turno ricerca";
+    % employeeShifts.descriptions(contains(employeeShifts.descriptions,"ricerca","IgnoreCase",true))="Turno ricerca";
     % - sorting
     [~,IDs]=sort(employeeShifts.startDates);
     employeeShifts=employeeShifts(IDs,:);
@@ -222,6 +222,7 @@ function uniqueNames=GetUniqueNames(masterShifts)
     uniqueNames=replace(uniqueNames,"turno","");    % remove "turno"
     uniqueNames=replace(uniqueNames,"8-16","");     % remove "8-16"
     uniqueNames=replace(uniqueNames,"9-17","");     % remove "9-17"
+    uniqueNames=replace(uniqueNames,"*","");        % remove "*"
     uniqueNames=regexprep(uniqueNames,'\s+',',');   % consecutive empty spaces to ","
     uniqueNames=regexprep(uniqueNames,':+','');     % consecutive ":" to ""
     uniqueNames=regexprep(uniqueNames,',+',',');    % consecutive "," to single ","
@@ -231,6 +232,15 @@ function uniqueNames=GetUniqueNames(masterShifts)
     for ii=1:length(tmp)
         uniqueNames=[uniqueNames;split(tmp(ii),",")];
     end
+    % remove IDs of operators
+    for ii=0:9
+        uniqueNames(strcmpi(uniqueNames,sprintf("%d",ii)))=[];
+    end
+    % remove odd strings
+    oddStrings=["MINI","FERMO","AT"];
+    for ii=1:length(oddStrings)
+        uniqueNames(strcmpi(uniqueNames,oddStrings(ii)))=[];
+    end
     % final settings
     uniqueNames=unique(uniqueNames);
     uniqueNames=uniqueNames(strlength(uniqueNames)>0);
@@ -238,5 +248,5 @@ end
 
 function oFileName=ExtractFileName(masterExcelShifts)
     [folder,baseFileNameNoExt,extension]=fileparts(masterExcelShifts);
-    oFileName=regexprep(baseFileNameNoExt,'\s+','_');
+    oFileName=regexprep(baseFileNameNoExt,'\s+','_'); % replace consecutive empty spaces to "_"
 end
