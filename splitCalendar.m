@@ -99,7 +99,7 @@ function masterShifts=ParseMasterFile(masterExcelShifts)
     fprintf("...done;\n");
     %
     fprintf("checking recuperi...\n");
-    iRecuperi=(contains(lower(masterShifts.(8)),"recupero") & ismissing(masterShifts.(9)));
+    iRecuperi=(contains(lower(masterShifts.(8)),"recuper") & ismissing(masterShifts.(9)));
     if (any(iRecuperi)), masterShifts(iRecuperi,9)=masterShifts(iRecuperi,8); end
     fprintf("...done;\n");
 end
