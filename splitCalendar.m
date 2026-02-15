@@ -13,9 +13,7 @@ tMax=datetime('26/06/2026 23:59:59','InputFormat','dd/MM/uuuu HH:mm:ss');
 %% parsing original excel
 masterShifts=ParseMasterFile(masterExcelShifts);
 
-%% crunch comments
-% fprintf("checking that FM is never shift leader...\n")
-% find(contains(lower(masterShifts.(8)),"recupero"))
+%% build list of people the calendar of which should be created
 if (isstring(employeeName))
     if (strcmpi(employeeName,"all") | strcmpi(employeeName,"tutti") )
         employeeNames=GetUniqueNames(masterShifts);
@@ -90,7 +88,7 @@ function masterShifts=ParseMasterFile(masterExcelShifts)
             Range= Excel.Range(sprintf("%s%d",char(double('A')+iCol),iRow+1));
             if (Range.Font.Strikethrough)
                 if (strlength(string(masterShifts.(iCol+1)(iRow)))>0)
-                    fprintf("...cacelled %s shift for %s on %s!\n",shiftNames(ceil(iCol/2)),string(masterShifts.(iCol+1)(iRow)),string(masterShifts.(1)(iRow)));
+                    fprintf("...cacelled %s for %s on %s!\n",shiftNames(ceil(iCol/2)),string(masterShifts.(iCol+1)(iRow)),string(masterShifts.(1)(iRow)));
                 end
                 masterShifts.(iCol+1)(iRow)=cellstr("");
             end
@@ -98,6 +96,11 @@ function masterShifts=ParseMasterFile(masterExcelShifts)
     end
     Quit(Excel);
     delete(Excel);
+    fprintf("...done;\n");
+    %
+    fprintf("checking recuperi...\n");
+    iRecuperi=(contains(lower(masterShifts.(8)),"recupero") & ismissing(masterShifts.(9)));
+    if (any(iRecuperi)), masterShifts(iRecuperi,9)=masterShifts(iRecuperi,8); end
     fprintf("...done;\n");
 end
 
@@ -118,42 +121,61 @@ function employeeShifts=BuildEmployeeTable(masterShifts,employeeName)
     % do the job
     fprintf("looking for shifts of %s...\n",employeeName);
     employeeShifts=table();
-    for iCol=2:7
+    for iCol=2:10
         iTurni=contains(masterShifts.(iCol),employeeName,"IgnoreCase",true);
         nTurni=sum(iTurni);
         if (nTurni>0)
             % prepare info to store
             currDates=masterShifts.(1);
             currLen=size(employeeShifts,1);
-            otherShifters=masterShifts.(iCol+(-1)^mod(iCol,2)); otherShifters=CapitalizeNames(string(otherShifters(iTurni)));
+            if (iCol<=7)
+                otherShifters=masterShifts.(iCol+(-1)^mod(iCol,2)); otherShifters=CapitalizeNames(string(otherShifters(iTurni)));
+                jCol=floor(iCol/2); % [1:3]
+                kCol=iCol-1; % [1:6]
+            else
+                otherShifters=CapitalizeNames(string(table2cell(masterShifts(:,(2:3)+(iCol-8)*2))));
+                % remove lines where the shifter in col 8-10 is already on
+                %    shift
+                iTurni=(iTurni & ~any(contains(otherShifters,CapitalizeNames(employeeName)),2));
+                nTurni=sum(iTurni);
+                otherShifters=table2cell(masterShifts(:,(2:3)+(iCol-8)*2)); otherShifters=CapitalizeNames(string(otherShifters(iTurni,:)));
+                jCol=iCol-7; % [1:3]
+                kCol=1+2*(jCol-1); % [1,3,5]
+            end
             % - subject
-            employeeShifts.subjects(currLen+1:currLen+nTurni)=shiftTag(floor(iCol/2));
+            employeeShifts.subjects(currLen+1:currLen+nTurni)=shiftTag(jCol);
             % - start dates and times:
             employeeShifts.startDates(currLen+1:currLen+nTurni)=currDates(iTurni);
-            employeeShifts.startTimes(currLen+1:currLen+nTurni)=shiftHours(2*floor(iCol/2)-1);
+            employeeShifts.startTimes(currLen+1:currLen+nTurni)=shiftHours(2*jCol-1);
             % - end dates and times:
-            if (2*floor(iCol/2)==length(shiftHours))
+            if (2*jCol==length(shiftHours))
                 % shift ends the following day
                 currEndDates=datenum(currDates(iTurni));
                 for ii=1:length(currEndDates)
-                    currEndDates(ii)=addtodate(currEndDates(ii),shiftDays(iCol-1),"day");
+                    currEndDates(ii)=addtodate(currEndDates(ii),shiftDays(kCol),"day");
                 end
                 employeeShifts.endDates(currLen+1:currLen+nTurni)=datetime(currEndDates,"ConvertFrom","datenum");
             else
                 employeeShifts.endDates(currLen+1:currLen+nTurni)=currDates(iTurni);
             end
-            employeeShifts.endTimes(currLen+1:currLen+nTurni)=shiftHours(2*floor(iCol/2));
+            employeeShifts.endTimes(currLen+1:currLen+nTurni)=shiftHours(2*jCol);
             % - descriptions
 %             employeeShifts.descriptions(currLen+1:currLen+nTurni)=compose("Tu sei %s, con %s come %s",...
 %                     shiftRoles(mod(iCol,2)+1),otherShifters,shiftRoles(mod(iCol-1,2)+1));
-            employeeShifts.descriptions(currLen+1:currLen+nTurni)=compose("Sei in turno con %s",otherShifters);
+            if (iCol<=7)
+                employeeShifts.descriptions(currLen+1:currLen+nTurni)=compose("Sei in turno con %s",otherShifters);
+            else
+                employeeShifts.descriptions(currLen+1:currLen+nTurni)=compose("Sei in turno con %s e %s",otherShifters);
+            end
             % - take into account notes in same column
-            additionalNotes=string(masterShifts.(iCol));
-            additionalNotes=additionalNotes(iTurni);
-            iNotes=find(~strcmpi(additionalNotes,employeeName));
-            employeeShifts.descriptions(currLen+iNotes)=additionalNotes(iNotes);
+            if (iCol<=7)
+                additionalNotes=string(masterShifts.(iCol));
+                additionalNotes=additionalNotes(iTurni);
+                iNotes=find(~strcmpi(additionalNotes,employeeName));
+                employeeShifts.descriptions(currLen+iNotes)=additionalNotes(iNotes);
+            end
             % - take into account notes in columns >7
-            additionalComments=string(masterShifts.(floor(iCol/2)+7));
+            additionalComments=string(masterShifts.(jCol+7));
             additionalComments=additionalComments(iTurni);
             iComments=find(strlength(additionalComments)>0);
             employeeShifts.descriptions(currLen+iComments)=compose("%s;\n NOTA: %s",employeeShifts.descriptions(currLen+iComments),additionalComments(iComments));
