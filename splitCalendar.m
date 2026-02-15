@@ -4,11 +4,16 @@ clear all;
 close all;
 
 %% user options
-employeeName="all"; % cognome persona, o "ricerca"/"research", o "operatori", o "tutti"/"all" 
+employeeName="ricerca"; % cognome persona, o "ricerca"/"research", o "operatori", o "tutti"/"all" 
 masterExcelShifts="P:\Turni Macchina\Turni_Gennaio-Giugno2026_ver1.xlsx";
 omFileName=ExtractFileName(masterExcelShifts);
 % tMin=datetime(now,'ConvertFrom','datenum'); % tMin=datetime('18/10/2025 13:05:00','InputFormat','dd/MM/uuuu HH:mm:ss');
 tMax=datetime('26/06/2026 23:59:59','InputFormat','dd/MM/uuuu HH:mm:ss');
+% groups
+ricercaEmployees=["Butella","Donetti","Felcini","Mereghetti","Nodari","Pullia","Savazzi"];
+ricercaNickNames=["GB","MD","EF","AM","MN","MGP","SS"];
+operators=["Abbiati","Basso","Beretta","Bozza","Cappello","Chiesa","Liceti","Malinverni","Manzini","Scotti","Spairani"];
+extendedSearch=ricercaEmployees;
 
 %% parsing original excel
 masterShifts=ParseMasterFile(masterExcelShifts);
@@ -18,10 +23,10 @@ if (isstring(employeeName))
     if (strcmpi(employeeName,"all") | strcmpi(employeeName,"tutti") )
         employeeNames=GetUniqueNames(masterShifts);
     elseif (contains(lower(employeeName),"ricerca") | contains(lower(employeeName),"research"))
-        employeeNames=["Butella","Donetti","Felcini","Mereghetti","Pullia","Ricerca","Savazzi","Nodari"];
-        employeeNickNames=["GB","MD","EF","AM","MGP",missing(),"SS","MN"];
+        employeeNames=[ricercaEmployees';"Ricerca"]';
+        employeeNickNames=[ricercaNickNames';missing()]';
     elseif (contains(lower(employeeName),"operatori") | contains(lower(employeeName),"operators"))
-        employeeNames=["Abbiati","Basso","Beretta","Bozza","Cappello","Chiesa","Liceti","Malinverni","Manzini","Scotti","Spairani"];
+        employeeNames=operators;
     else
         employeeNames=[employeeName];
     end
@@ -40,7 +45,7 @@ crunchShifts=masterShifts(isbetween(masterShifts.Turni,tMin,tMax),:);
 rEmployeeShifts=NaN();
 for ii=1:length(employeeNames)
     % - build table of employee
-    employeeShifts=BuildEmployeeTable(crunchShifts,employeeNames(ii));
+    employeeShifts=BuildEmployeeTable(crunchShifts,employeeNames(ii),any(contains(extendedSearch,employeeNames(ii))));
     % - write csv file
     if (contains(lower(employeeName),"ricerca"))
         NickName=employeeNickNames(ii);
@@ -112,16 +117,18 @@ function oNames=CapitalizeNames(iNames)
     oNames(~iFMs)=compose("%s%s",upper(extractBetween(oNames(~iFMs),1,1)),extractBetween(oNames(~iFMs),2,strlength(oNames(~iFMs))));
 end
 
-function employeeShifts=BuildEmployeeTable(masterShifts,employeeName)
+function employeeShifts=BuildEmployeeTable(masterShifts,employeeName,extendedSearch)
     % preamble
     shiftHours=["06:00","14:00","14:00","22:00","22:00","06:00"];
     shiftDays=zeros(1,6); shiftDays(5:6)=1;
     shiftRoles=["shift leader","addetto sicurezza"];
     shiftTag=["turno mattino","turno pomeriggio","turno notte"];
+    if (~exist("extendedSearch","var")), extendedSearch=false; end
     % do the job
     fprintf("looking for shifts of %s...\n",employeeName);
     employeeShifts=table();
-    for iCol=2:10
+    if (extendedSearch), iColMax=10; else, iColMax=7; end
+    for iCol=2:iColMax
         iTurni=contains(masterShifts.(iCol),employeeName,"IgnoreCase",true);
         nTurni=sum(iTurni);
         if (nTurni>0)
@@ -194,11 +201,13 @@ function employeeShifts=BuildEmployeeTable(masterShifts,employeeName)
             end
         end
     end
-    employeeShifts.descriptions(contains(employeeShifts.descriptions,"nessuno","IgnoreCase",true))="Sei in turno da solo";
-    % employeeShifts.descriptions(contains(employeeShifts.descriptions,"ricerca","IgnoreCase",true))="Turno ricerca";
-    % - sorting
-    [~,IDs]=sort(employeeShifts.startDates);
-    employeeShifts=employeeShifts(IDs,:);
+    if (size(employeeShifts,1)>0)
+        employeeShifts.descriptions(contains(employeeShifts.descriptions,"nessuno","IgnoreCase",true))="Sei in turno da solo";
+        % employeeShifts.descriptions(contains(employeeShifts.descriptions,"ricerca","IgnoreCase",true))="Turno ricerca";
+        % - sorting
+        [~,IDs]=sort(employeeShifts.startDates);
+        employeeShifts=employeeShifts(IDs,:);
+    end
     %
     fprintf("...found %d shifts!\n",size(employeeShifts,1));
 end
